@@ -34,38 +34,41 @@ export async function searchSearxng(
       const onAbort = () => ctrl.abort()
       signal?.addEventListener('abort', onAbort)
 
-      const response = await fetch(`${base}/search?${params}`, {
-        headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
+      try {
+        const response = await fetch(`${base}/search?${params}`, {
+          headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
+          signal: ctrl.signal,
+        })
 
-      if (!response.ok) {
-        errors.push(`${base}: HTTP ${response.status}`)
-        continue
+        if (!response.ok) {
+          errors.push(`${base}: HTTP ${response.status}`)
+          continue
+        }
+
+        const data = (await response.json().catch(() => null)) as {
+          results?: Array<{ url?: string; title?: string; content?: string }>
+        } | null
+        if (!data || !Array.isArray(data.results)) {
+          errors.push(`${base}: invalid JSON`)
+          continue
+        }
+
+        const sources = data.results
+          .filter((r) => r.url)
+          .map((r) => ({
+            url: r.url!,
+            ...(r.title ? { title: String(r.title) } : {}),
+            ...(r.content ? { snippet: String(r.content) } : {}),
+          }))
+
+        if (sources.length > 0) {
+          return { sources: uniqueSources(sources, maxResults), truncated: false }
+        }
+        errors.push(`${base}: 0 results`)
+      } finally {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
       }
-
-      const data = (await response.json().catch(() => null)) as {
-        results?: Array<{ url?: string; title?: string; content?: string }>
-      } | null
-      if (!data || !Array.isArray(data.results)) {
-        errors.push(`${base}: invalid JSON`)
-        continue
-      }
-
-      const sources = data.results
-        .filter((r) => r.url)
-        .map((r) => ({
-          url: r.url!,
-          ...(r.title ? { title: String(r.title) } : {}),
-          ...(r.content ? { snippet: String(r.content) } : {}),
-        }))
-
-      if (sources.length > 0) {
-        return { sources: uniqueSources(sources, maxResults), truncated: false }
-      }
-      errors.push(`${base}: 0 results`)
     } catch (error) {
       errors.push(`${base}: ${error instanceof Error ? error.message : String(error)}`)
     }

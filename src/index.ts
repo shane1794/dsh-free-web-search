@@ -97,7 +97,9 @@ export function apply(ctx: Context, config?: PluginConfig) {
       try {
         const resolved = await credentials.resolve(envName)
         if (resolved?.value) return resolved.value
-      } catch { /* ignore */ }
+      } catch (e) {
+        logger.warn(`free-search: credential resolution failed for ${envName}: ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
     return process.env[envName] ?? ''
   }
@@ -119,7 +121,9 @@ export function apply(ctx: Context, config?: PluginConfig) {
       const preferred: EngineId =
         typeof request.engine === 'string' && (ALL_ENGINES as readonly string[]).includes(request.engine)
           ? request.engine as EngineId
-          : (cfg.provider ?? 'bing') as EngineId
+          : (ALL_ENGINES as readonly string[]).includes(cfg.provider ?? '')
+            ? cfg.provider as EngineId
+            : 'bing'
 
       const timeRange = parseTimeRange(request.timeRange)
       const timeRangeLabel = typeof request.timeRange === 'string'
@@ -128,7 +132,7 @@ export function apply(ctx: Context, config?: PluginConfig) {
 
       const cacheTtlMs = Math.min(Math.max(cfg.cacheTtl ?? 5, 0), 5) * 60 * 1000
       const cacheEnabled = cfg.cache !== false && cacheTtlMs > 0
-      const maxResults = (request.maxResults as number) || 5
+      const maxResults = Math.max((request.maxResults as number | undefined) ?? 5, 1)
       const cacheKey = cacheEnabled ? searchCache.buildKey(query, maxResults, timeRangeLabel, preferred) : null
 
       if (cacheKey) {
@@ -174,6 +178,10 @@ export function apply(ctx: Context, config?: PluginConfig) {
               result.content = preferredSkippedReason === 'time-filter'
                 ? `Note: ${preferred} does not support time filtering (timeRange=${timeRangeLabel}), using ${engine}.`
                 : `Note: ${preferred} unavailable or failed${preferredFailure ? ` (${preferredFailure})` : ''}, using ${engine}.`
+            }
+            if (timeRange && !TIME_ENGINES.includes(engine)) {
+              const warn = `Warning: ${engine} does not support time filtering — results are unfiltered.`
+              result.content = result.content ? `${result.content} ${warn}` : warn
             }
             const cached: SearchResult = { ...result, provider: engine }
             if (cacheKey) {

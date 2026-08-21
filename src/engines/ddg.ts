@@ -1,7 +1,7 @@
 import type { SearchOptions, SearchResult } from './common.js'
 import {
   approximateTimeRange,
-  decodeEntities,
+  checkDdgAntiBot,
   extractDdgUrl,
   fetchHtmlWithRetry,
   stripTags,
@@ -25,6 +25,7 @@ export async function searchDdgHtml(
   }
 
   const html = await fetchHtmlWithRetry(`${DDG_HTML_URL}?${params}`, signal)
+  checkDdgAntiBot(html)
   const blocks = html.match(/<div class="result results_links[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g) ?? []
   const sources = []
 
@@ -59,6 +60,7 @@ export async function searchDdgLite(
   }
 
   const html = await fetchHtmlWithRetry(`${DDG_LITE_URL}?${params}`, signal)
+  checkDdgAntiBot(html)
   const linkMatches = html.match(/<a[^>]*class=['"]result-link['"][^>]*>[\s\S]*?<\/a>/g) ?? []
   const snippetMatches = html.match(/class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/g) ?? []
   const sources = []

@@ -62,8 +62,9 @@ export function createPlatformSearchTool(getEnabledPlatforms: () => string[]) {
       if (!enabled.includes(platform)) {
         throw new Error(`platform "${platform}" is disabled in settings`)
       }
+      if (!args.query?.trim()) throw new Error('query is required')
       const limit = Math.min(args.maxResults ?? 5, 10)
-      const result = await searchPlatform(platform, args.query ?? '', limit)
+      const result = await searchPlatform(platform, args.query, limit)
       const sources = (result.sources ?? []).map((s) => {
         const source: Record<string, string> = {}
         if (s.url) source.url = s.url

@@ -149,13 +149,15 @@ export async function fetchHtml(url: string, signal?: AbortSignal): Promise<stri
     throw new Error(`HTTP ${response.status} from ${url.split('?')[0]}`)
   }
 
-  const html = await response.text()
+  return response.text()
+}
 
-  if (response.status === 202 || /anomaly|captcha|unusual traffic|robot check/i.test(html.slice(0, 4000))) {
-    throw new Error('DuckDuckGo is rate-limited right now (anti-bot challenge, usually temporary) - Bing works')
+const DDG_ANTIBOT_RE = /anomaly|captcha|unusual traffic|robot check/i
+
+export function checkDdgAntiBot(html: string): void {
+  if (DDG_ANTIBOT_RE.test(html.slice(0, 4000))) {
+    throw new Error('DuckDuckGo is rate-limited (anti-bot challenge, usually temporary)')
   }
-
-  return html
 }
 
 export async function fetchHtmlWithRetry(url: string, signal?: AbortSignal): Promise<string> {

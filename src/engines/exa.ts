@@ -53,17 +53,16 @@ export async function searchExa(
   }
 
   const sources = (data.results ?? [])
+    .filter((result) => result.url)
     .map((result) => {
       const snippet = result.highlights?.find((h) => h.trim().length > 0)
-      if (!snippet) return null
       return {
         url: result.url,
         ...(result.title ? { title: result.title } : {}),
-        snippet,
+        ...(snippet ? { snippet } : {}),
         ...(result.publishedDate ? { publishedAt: result.publishedDate } : {}),
       }
     })
-    .filter((s): s is NonNullable<typeof s> => s !== null)
 
   return { sources: uniqueSources(sources, maxResults), truncated: false }
 }

@@ -1,6 +1,15 @@
 import type { SearchResult } from './common.js'
 import { uniqueSources } from './common.js'
 
+function extractCitationContext(text: string, index: number): string {
+  const marker = `[${index}]`
+  const pos = text.indexOf(marker)
+  if (pos === -1) return text.slice(0, 200)
+  const start = Math.max(0, pos - 80)
+  const end = Math.min(text.length, pos + marker.length + 120)
+  return text.slice(start, end).trim()
+}
+
 export async function searchPerplexity(
   query: string,
   maxResults: number,
@@ -38,9 +47,9 @@ export async function searchPerplexity(
 
   const answer = data.choices?.[0]?.message?.content ?? ''
   const citations = data.citations ?? []
-  const sources = citations.map((url) => ({
+  const sources = citations.map((url, i) => ({
     url,
-    ...(answer ? { snippet: answer.slice(0, 200) } : {}),
+    ...(answer ? { snippet: extractCitationContext(answer, i + 1) } : {}),
   }))
 
   return {

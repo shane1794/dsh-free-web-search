@@ -62,7 +62,10 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown | undefined> 
   for await (const chunk of req) {
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > MAX_JSON_BODY_BYTES) return undefined
+    if (size > MAX_JSON_BODY_BYTES) {
+      req.resume()
+      return undefined
+    }
     chunks.push(buffer)
   }
   try {

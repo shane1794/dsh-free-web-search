@@ -1,0 +1,9 @@
+- insert:
+    - id: web-search-free
+      name: dsh-free-web-search
+      config:
+        provider: bing
+        bingMarket: en-US
+- id: web
+  config:
+    searchProvider: ddg

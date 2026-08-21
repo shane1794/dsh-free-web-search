@@ -58,6 +58,15 @@ query: "deepseek harness plugins"
 maxResults: 5
 ```
 
+### `web_fetch`
+
+```
+url: "https://docs.example.com/guide"
+maxLength: 50000                       # optional, default 50000 chars
+```
+
+Fetches a single page, strips HTML, returns plain text. For reading articles, docs, or any URL.
+
 ### `free_search_test`
 
 Tests engine availability. No arguments tests all engines.
@@ -75,6 +84,8 @@ free-search:
   platforms:
     - github
     - reddit
+  searxngInstances:          # optional, overrides default public instances
+    - https://your-instance.example.com
   # Optional API keys
   exaApiKey: ""
   tavilyApiKey: ""

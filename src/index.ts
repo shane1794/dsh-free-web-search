@@ -24,6 +24,7 @@ import { makeBridgeRoutes } from './bridge/routes.js'
 import { createAdvancedSearchTool } from './tools/web-search.js'
 import { createPlatformSearchTool } from './tools/platform-search.js'
 import { createEngineTestTool } from './tools/engine-test.js'
+import { createWebFetchTool } from './tools/web-fetch.js'
 import { FREE_SEARCH_NS, ALL_ENGINES } from './constants.js'
 import type { EngineId, EngineTestFn, EngineTestResult, EngineTestFailure } from './constants.js'
 
@@ -344,6 +345,13 @@ export function apply(ctx: Context, config?: PluginConfig) {
     }, 'free-search: advanced search tool')
   })
 
+  ctx.inject(['tools'], (sctx: Context) => {
+    sctx.effect(() => {
+      const d = (sctx as any).tools.register(createWebFetchTool())
+      return () => d()
+    }, 'free-search: web fetch tool')
+  })
+
   ctx.inject(['systemPrompt'], (sctx: Context) => {
     let disposeSection: (() => void) | null = null
     const sp = (sctx as any).systemPrompt as {
@@ -378,6 +386,7 @@ export function apply(ctx: Context, config?: PluginConfig) {
           'Use free_search_test to test engine availability.',
           'Use advanced_search with timeRange for time-filtered results.',
           'Use platform_search for GitHub/Reddit searches.',
+          'Use web_fetch to read the full content of a single web page (articles, docs, any URL).',
         ].join('\n'),
       })
     }

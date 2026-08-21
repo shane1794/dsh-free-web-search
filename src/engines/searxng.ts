@@ -1,7 +1,9 @@
 import type { SearchOptions, SearchResult } from './common.js'
 import { USER_AGENT, approximateTimeRange, uniqueSources } from './common.js'
 
-export const SEARXNG_INSTANCES = [
+// Fallback public instances — may go offline or rate-limit at any time.
+// Configure your own via Settings > Plugins > Free Web Search > searxngInstances.
+export const SEARXNG_DEFAULT_INSTANCES = [
   'https://opnxng.com',
   'https://priv.au',
   'https://searx.be',
@@ -18,7 +20,7 @@ export async function searchSearxng(
   options?: SearchOptions,
   signal?: AbortSignal,
 ): Promise<SearchResult> {
-  const instances = options?.searxngInstances?.length ? options.searxngInstances : SEARXNG_INSTANCES
+  const instances = options?.searxngInstances?.length ? options.searxngInstances : SEARXNG_DEFAULT_INSTANCES
   const errors: string[] = []
 
   for (const base of instances) {

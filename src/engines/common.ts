@@ -97,9 +97,50 @@ export function cleanSnippet(text: string | undefined): string | undefined {
     .slice(0, 300)
 }
 
+/** Decode a base64url payload as UTF-8. `atob` keeps this free of `Buffer`. */
+function fromBase64Url(value: string): string | null {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  try {
+    const binary = atob(padded)
+    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Bing serves no result URLs. Every href on a SERP is its own click tracker —
+ * `https://www.bing.com/ck/a?…&u=a1<base64url of the target>&ntb=1` — and it
+ * arrives with HTML entities intact. Handed to a model unchanged, the citation
+ * is a `bing.com/ck/a?!&amp;&amp;…` link that answers `204` and leads nowhere.
+ *
+ * So: decode the entities, then unwrap `u=a1…`. Anything unexpected degrades to
+ * the entity-decoded href rather than dropping the result — a tracker link that
+ * at least resolves beats no source at all.
+ */
+export function extractBingUrl(href: string | undefined): string | null {
+  if (!href) return null
+  const decoded = decodeEntities(href)
+
+  let parsed: URL
+  try {
+    parsed = new URL(decoded)
+  } catch {
+    return decoded
+  }
+  if (!/(^|\.)bing\.com$/i.test(parsed.hostname) || !parsed.pathname.startsWith('/ck/a')) return decoded
+
+  const wrapped = parsed.searchParams.get('u')
+  if (wrapped === null || !wrapped.startsWith('a1')) return decoded
+
+  const target = fromBase64Url(wrapped.slice(2))
+  return target !== null && /^https?:\/\//i.test(target) ? target : decoded
+}
+
 export function extractDdgUrl(rel: string | undefined): string | null {
   if (!rel) return null
-  const m = rel.match(/uddg=([^&]+)/)
+  const m = decodeEntities(rel).match(/uddg=([^&]+)/)
   if (m) {
     try {
       return decodeURIComponent(m[1]!)

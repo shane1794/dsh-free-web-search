@@ -50,6 +50,9 @@
   },
   "scripts": {
     "build": "tsc && tsdown",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test \"test/*.test.ts\"",
     "prepare": "tsdown -c tsdown.prepare.config.ts"
   },
   "engines": {

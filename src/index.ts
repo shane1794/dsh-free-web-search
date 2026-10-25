@@ -1,6 +1,6 @@
+import path from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import {
   searchDdgHtml,
@@ -21,6 +21,8 @@ import {
 import type { SearchResult, SearchOptions, TimeRange } from './engines/index.js'
 import { SearchCache } from './bridge/cache.js'
 import { makeBridgeRoutes } from './bridge/routes.js'
+import { FREE_SEARCH_DIR, SettingsFile, resolveDshHome } from './bridge/store.js'
+import type { FreeSearchSettings } from './bridge/store.js'
 import { createAdvancedSearchTool } from './tools/web-search.js'
 import { createPlatformSearchTool } from './tools/platform-search.js'
 import { createEngineTestTool } from './tools/engine-test.js'
@@ -77,10 +79,19 @@ function toSearchOptions(cfg: PluginConfig, timeRange?: TimeRange): SearchOption
 }
 
 export function apply(ctx: Context, config?: PluginConfig) {
-  let current = (): PluginConfig => config ?? {}
   // Context services not covered by @deepseek-ai/cordis types
   const ctxAny = ctx as any // eslint-disable-line @typescript-eslint/no-explicit-any
   const logger = ctxAny.logger as { warn(msg: string): void }
+
+  // Plugin-owned settings file: survives the harness settings-service reshuffle
+  // and keeps the engine choice editable while the app is closed.
+  const store = new SettingsFile(
+    path.join(resolveDshHome(), FREE_SEARCH_DIR, 'settings.json'),
+    () => (config ?? {}) as FreeSearchSettings,
+    message => logger.warn(message),
+  )
+  /** Entry config with the settings file layered on top; read per request. */
+  const current = (): PluginConfig => ({ ...(config ?? {}), ...store.get() })
   const credentials = ctxAny.get?.('credentials') as
     { resolve(name: string): Promise<{ value?: string }> } | null
 
@@ -304,15 +315,13 @@ export function apply(ctx: Context, config?: PluginConfig) {
     }
   }
 
-  installSettingsSection(ctx, FREE_SEARCH_NS, Config, (config ?? {}) as any, {
-    setSource: (source: () => PluginConfig) => { current = source },
-    onChange: () => { if (refreshPrompt) refreshPrompt() },
-  })
-
-  ctx.inject(['webServer', 'settings'], (sctx: Context) => {
+  // Settings bridge for the plugin's own page and the /free-search-engine
+  // command. Backed by the plugin's JSON file, not the harness settings service
+  // (0.2.x dropped settingsNamespace/installSettingsSection).
+  ctx.inject(['webServer'], (sctx: Context) => {
     sctx.effect(() => {
       const disposers = makeBridgeRoutes(
-        (sctx as any).settings,
+        store,
         request => provider.search(request),
         (engine, query) => runEngineTest(engine, query),
       ).map(route => (sctx as any).webServer.register(route))

@@ -1,26 +1,23 @@
+/**
+ * Settings bridge for the free web search plugin.
+ *
+ * Three loopback-only POST routes the plugin's own settings page talks to:
+ *   /api/dsh-free-web-search-settings/describe
+ *   /api/dsh-free-web-search-settings/mutate
+ *   /api/dsh-free-web-search-settings/raw-search
+ *
+ * Persistence is the plugin's own JSON file (see ./store.js), not the harness
+ * settings service — the service stopped exporting the namespace/installer API
+ * this bridge was written against.
+ */
+
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { FREE_SEARCH_NS } from '../constants.js'
+import { SettingsConflictError } from './store.js'
+import type { SettingsFile } from './store.js'
 import type { SearchResult, TimeRange } from '../engines/index.js'
 
 export const BRIDGE_PREFIX = '/api/dsh-free-web-search-settings'
 const MAX_JSON_BODY_BYTES = 64 * 1024
-
-interface SettingsDescriptor {
-  ns: string
-  schema: unknown
-  value: unknown
-  base?: unknown
-  user?: unknown
-  secrets?: Array<{ path: string[]; set: boolean }>
-  revision: number
-}
-
-interface SettingsService {
-  describe(opts: { redactSecrets: boolean }): SettingsDescriptor[]
-  mutate(ns: ReturnType<typeof settingsNamespace>, ops: unknown[], expectedRevision?: number): Promise<void>
-  writable?: boolean
-}
 
 type SearchFn = (request: Record<string, unknown>) => Promise<SearchResult>
 type TestEngineFn = (engine: string, query: string, timeRange?: TimeRange) => Promise<
@@ -75,20 +72,6 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown | undefined> 
   }
 }
 
-function toView(descriptor: SettingsDescriptor) {
-  return {
-    ns: String(descriptor.ns),
-    schema: descriptor.schema,
-    value: descriptor.value,
-    ...(descriptor.base === undefined ? {} : { base: descriptor.base }),
-    ...(descriptor.user === undefined ? {} : { user: descriptor.user }),
-    ...(descriptor.secrets === undefined
-      ? {}
-      : { secrets: descriptor.secrets.map((s) => ({ path: [...s.path], set: s.set })) }),
-    revision: descriptor.revision,
-  }
-}
-
 export interface BridgeRoute {
   kind: 'exact'
   path: string
@@ -96,16 +79,10 @@ export interface BridgeRoute {
 }
 
 export function makeBridgeRoutes(
-  settings: SettingsService,
+  store: SettingsFile,
   search: SearchFn,
   testEngine: TestEngineFn,
 ): BridgeRoute[] {
-  const allowlisted = () =>
-    settings
-      .describe({ redactSecrets: true })
-      .filter((d) => String(d.ns) === FREE_SEARCH_NS)
-      .map((d) => String(d.ns))
-
   const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
     if (!isLoopbackRequest(req)) {
       writeJson(res, 403, { error: 'loopback requests only' })
@@ -120,15 +97,13 @@ export function makeBridgeRoutes(
 
   const handlers = {
     async describe() {
-      const descriptors = settings.describe({ redactSecrets: true })
       return {
         ok: true,
         value: {
-          namespaces: allowlisted()
-            .map((ns) => descriptors.find((d) => String(d.ns) === ns))
-            .filter((d): d is SettingsDescriptor => d !== undefined)
-            .map(toView),
-          writable: settings.writable !== false,
+          namespaces: [store.view('free-search')],
+          writable: true,
+          // Where the values live, so the page can point at the file.
+          file: store.file,
         },
       }
     },
@@ -138,25 +113,18 @@ export function makeBridgeRoutes(
       if (body === null || typeof body !== 'object' || typeof body.ns !== 'string' || !Array.isArray(body.ops)) {
         return { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' }
       }
-      const { ns } = body
-      if (!allowlisted().includes(ns)) {
-        return { ok: false, code: 'settings-not-exposed', message: `settings namespace "${ns}" is not exposed` }
+      if (body.ns !== 'free-search') {
+        return { ok: false, code: 'settings-not-exposed', message: `settings namespace "${body.ns}" is not exposed` }
       }
       const expectedRevision = typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined
       try {
-        await settings.mutate(settingsNamespace(ns), body.ops as unknown[], expectedRevision)
+        return { ok: true, value: store.mutate(body.ops, expectedRevision) }
       } catch (error) {
         if (error instanceof SettingsConflictError) {
           return { ok: false, code: 'settings-conflict', message: error.message }
         }
-        const message = error instanceof Error ? error.message : String(error)
-        return { ok: false, code: 'internal', message }
+        return { ok: false, code: 'settings-rejected', message: error instanceof Error ? error.message : String(error) }
       }
-      const descriptor = settings.describe({ redactSecrets: true }).find((c) => String(c.ns) === ns)
-      if (descriptor === undefined) {
-        return { ok: false, code: 'internal', message: `settings namespace "${ns}" was disposed after the mutate` }
-      }
-      return { ok: true, value: toView(descriptor) }
     },
 
     async rawSearch(request: Record<string, unknown>) {

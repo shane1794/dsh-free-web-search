@@ -1,6 +1,6 @@
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-
-export const FREE_SEARCH_NS = settingsNamespace('free-search')
+// Local fork: dsh-settings 0.2.x no longer exports settingsNamespace.
+// The namespace is only a plain string key now; the settings UI is dropped.
+export const FREE_SEARCH_NS = 'free-search'
 
 export const ALL_ENGINES = [
   'ddg', 'ddg-lite', 'bing', 'searxng', 'anysearch',

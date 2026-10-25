@@ -1,6 +1,6 @@
 {
   "name": "dsh-free-web-search",
-  "version": "0.1.0",
+  "version": "0.1.0-fork.2",
   "description": "Free web search for DeepSeek Harness: Bing, DuckDuckGo, SearXNG, Exa, Tavily, Keenable — with automatic fallback, time filtering, and platform search",
   "license": "Apache-2.0",
   "author": "delef",
@@ -34,7 +34,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
+    "lib/index.js",
+    "lib/client.js",
     "cordis.patch.yml"
   ],
   "dsh": {
@@ -43,9 +44,8 @@
     },
     "client": {
       "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ]
+      "immediately": true,
+      "inject": []
     }
   },
   "scripts": {

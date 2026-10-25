@@ -6,6 +6,7 @@ export async function searchAnysearch(
   query: string,
   maxResults: number,
   signal?: AbortSignal,
+  apiKey?: string,
 ): Promise<SearchResult> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
@@ -16,7 +17,11 @@ export async function searchAnysearch(
   try {
     response = await fetch(ANYSEARCH_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        // Key optional: without it the request is anonymous and rate-limited per IP.
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
       body: JSON.stringify({ query, max_results: maxResults }),
       signal: controller.signal,
     })
@@ -28,7 +33,15 @@ export async function searchAnysearch(
     signal?.removeEventListener('abort', onAbort)
   }
 
-  if (!response.ok) throw new Error(`AnySearch API error (HTTP ${response.status})`)
+  if (!response.ok) {
+    const hint =
+      response.status === 401 ? ' — invalid anysearchApiKey'
+        : response.status === 402 ? ' — quota exhausted'
+          : response.status === 403 ? ' — key expired or disabled'
+            : response.status === 429 ? ' — rate limited (add anysearchApiKey for a higher allowance)'
+              : ''
+    throw new Error(`AnySearch API error (HTTP ${response.status})${hint}`)
+  }
 
   const data = (await response.json()) as {
     code: number

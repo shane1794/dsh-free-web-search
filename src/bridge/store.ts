@@ -27,6 +27,7 @@ export const FREE_SEARCH_DIR = 'free-search'
 
 /** Fields never echoed back to the browser; `describe` reports them as markers. */
 export const SECRET_FIELDS = [
+  'anysearchApiKey',
   'exaApiKey',
   'tavilyApiKey',
   'keenableApiKey',
@@ -52,6 +53,7 @@ export interface FreeSearchSettings {
   cache?: boolean
   cacheTtl?: number
   platforms?: string[]
+  anysearchApiKey?: string
   exaApiKey?: string
   tavilyApiKey?: string
   keenableApiKey?: string

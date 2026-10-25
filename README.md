@@ -26,7 +26,7 @@ If pnpm blocks the build script, add the key it prints to `allowBuilds` in your 
 | Bing | Free | No |
 | DuckDuckGo (HTML / Lite) | Free | No |
 | SearXNG | Free | No |
-| AnySearch AI | Free | No |
+| AnySearch AI | Free tier / paid | Optional |
 | Exa | Free tier / paid | Optional |
 | Tavily | Free tier / paid | Optional |
 | Keenable | Free tier / paid | Optional |
@@ -87,6 +87,7 @@ free-search:
   searxngInstances:          # optional, overrides default public instances
     - https://your-instance.example.com
   # Optional API keys
+  anysearchApiKey: ""
   exaApiKey: ""
   tavilyApiKey: ""
   keenableApiKey: ""

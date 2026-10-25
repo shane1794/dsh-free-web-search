@@ -46,6 +46,7 @@ interface PluginConfig {
   bingMarket?: string
   searxngInstances?: string[]
   platforms?: string[]
+  anysearchApiKey?: string
   exaApiKey?: string
   tavilyApiKey?: string
   keenableApiKey?: string
@@ -62,6 +63,7 @@ export const Config = z.object({
   bingMarket: z.string().default('en-US'),
   searxngInstances: z.array(z.string()),
   platforms: z.array(z.string()).default(['github', 'reddit']),
+  anysearchApiKey: z.string().role('secret'),
   exaApiKey: z.string().role('secret'),
   tavilyApiKey: z.string().role('secret'),
   keenableApiKey: z.string().role('secret'),
@@ -225,7 +227,10 @@ export function apply(ctx: Context, config?: PluginConfig) {
       case 'ddg-lite': return searchDdgLite(query, maxResults, opts, signal)
       case 'bing': return searchBing(query, maxResults, opts, signal)
       case 'searxng': return searchSearxng(query, maxResults, opts, signal)
-      case 'anysearch': return searchAnysearch(query, maxResults, signal)
+      case 'anysearch': {
+        const key = await resolveApiKey('ANYSEARCH_API_KEY', 'anysearchApiKey')
+        return searchAnysearch(query, maxResults, signal, key)
+      }
       case 'exa': {
         const key = await resolveApiKey('EXA_API_KEY', 'exaApiKey')
         return key
@@ -269,7 +274,10 @@ export function apply(ctx: Context, config?: PluginConfig) {
         case 'ddg-lite': return { ok: true, ...(await searchDdgLite(q, 2, opts)), truncated: false }
         case 'bing': return { ok: true, ...(await searchBing(q, 2, opts)), truncated: false }
         case 'searxng': return { ok: true, ...(await searchSearxng(q, 2, opts)), truncated: false }
-        case 'anysearch': return { ok: true, ...(await searchAnysearch(q, 2)), truncated: false }
+        case 'anysearch': {
+          const key = await resolveApiKey('ANYSEARCH_API_KEY', 'anysearchApiKey')
+          return { ok: true, ...(await searchAnysearch(q, 2, undefined, key)), truncated: false }
+        }
         case 'exa': {
           const key = await resolveApiKey('EXA_API_KEY', 'exaApiKey')
           return { ok: true, ...(key ? await searchExa(q, 2, key) : await searchExaMCP(q, 2)), truncated: false }
@@ -383,7 +391,7 @@ export function apply(ctx: Context, config?: PluginConfig) {
           '- ddg-lite (DuckDuckGo Lite) - FREE, no key',
           '- bing (Bing) - FREE, no key (most stable)',
           '- searxng (meta-search) - FREE, no key',
-          '- anysearch (AI search) - FREE, no key',
+          '- anysearch (AI search) - FREE, no key (ANYSEARCH_API_KEY optional for higher limits)',
           '- exa - FREE keyless (MCP) or EXA_API_KEY',
           '- tavily - FREE keyless or TAVILY_API_KEY',
           '- keenable - FREE keyless (MCP) or KEENABLE_API_KEY',

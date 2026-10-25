@@ -36,6 +36,7 @@ const CSS = [
 ].join('')
 
 const KEY_FIELDS = [
+  { field: 'anysearchApiKey', label: 'AnySearch API key', link: 'https://www.anysearch.com/console/api-keys' },
   { field: 'exaApiKey', label: 'Exa API key', link: 'https://dashboard.exa.ai/api-keys' },
   { field: 'tavilyApiKey', label: 'Tavily API key', link: 'https://app.tavily.com/home' },
   { field: 'keenableApiKey', label: 'Keenable API key', link: 'https://keenable.ai/login' },

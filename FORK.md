@@ -1,4 +1,4 @@
-# Local fork — dsh-free-web-search 0.1.0-fork.2
+# Local fork — dsh-free-web-search 0.1.0-fork.3
 
 Built for **DeepSeek Harness desktop, kernel 0.2.1-rc.3** (Electron build, Oct 2026).
 
@@ -33,7 +33,8 @@ Upstream 0.1.0 (commit 354b95a, 2026-08-30) is written against dsh-settings 0.1.
 | `src/client/SettingsPage.tsx` | **new** — full settings page (engine picker, optional API keys, cache TTL, platform toggles, engine test) |
 | `src/client/index.ts` | registers `settings.section` id `free-web-search` + the `/free-search-engine` command |
 | `src/client/FreeSearchCard.tsx` | deleted (upstream card targeted a slot this kernel lacks) |
-| `package.json` | `version` → `0.1.0-fork.2`; `dsh.client` = `{platform:"web", immediately:true, inject:[]}`; `files` = `lib/index.js`, `lib/client.js`, `cordis.patch.yml` |
+| `src/engines/anysearch.ts` | optional `anysearchApiKey` sent as `Authorization: Bearer …`; keyless stays the default, and 401/402/403/429 now say what actually failed |
+| `package.json` | `version` → `0.1.0-fork.3`; `dsh.client` = `{platform:"web", immediately:true, inject:[]}`; `files` = `lib/index.js`, `lib/client.js`, `cordis.patch.yml` |
 
 Everything else is upstream: 10 engines, fallback chain, LRU cache, `advanced_search`,
 `platform_search`, `web_fetch`, `free_search_test`, and the `web` search provider

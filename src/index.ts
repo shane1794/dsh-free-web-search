@@ -46,6 +46,7 @@ interface PluginConfig {
   bingMarket?: string
   searxngInstances?: string[]
   platforms?: string[]
+  rotation?: string
   anysearchApiKey?: string
   exaApiKey?: string
   tavilyApiKey?: string
@@ -63,6 +64,7 @@ export const Config = z.object({
   bingMarket: z.string().default('en-US'),
   searxngInstances: z.array(z.string()),
   platforms: z.array(z.string()).default(['github', 'reddit']),
+  rotation: z.string().default('round-robin'),
   anysearchApiKey: z.string().role('secret'),
   exaApiKey: z.string().role('secret'),
   tavilyApiKey: z.string().role('secret'),
@@ -121,6 +123,60 @@ export function apply(ctx: Context, config?: PluginConfig) {
   const PAID_ENGINES: EngineId[] = ['exa', 'tavily', 'keenable', 'perplexity', 'deepseek-official']
   const SCRAPE_ENGINES: EngineId[] = ['bing', 'anysearch', 'ddg', 'ddg-lite', 'searxng']
   const TIME_ENGINES: EngineId[] = ['tavily', 'exa', 'keenable', 'searxng', 'ddg', 'ddg-lite']
+  /** Engines that cannot run at all without a key; rotation skips them while unset. */
+  const KEY_ONLY_ENGINES: EngineId[] = ['perplexity', 'deepseek-official']
+  const ENGINE_KEY_ENV: Partial<Record<EngineId, [string, keyof PluginConfig]>> = {
+    anysearch: ['ANYSEARCH_API_KEY', 'anysearchApiKey'],
+    exa: ['EXA_API_KEY', 'exaApiKey'],
+    tavily: ['TAVILY_API_KEY', 'tavilyApiKey'],
+    keenable: ['KEENABLE_API_KEY', 'keenableApiKey'],
+    perplexity: ['PERPLEXITY_API_KEY', 'perplexityApiKey'],
+    'deepseek-official': ['DEEPSEEK_API_KEY', 'deepseekApiKey'],
+  }
+
+  /**
+   * Rotation pointer and per-engine health, both process-local.
+   *
+   * Round-robin spreads requests over the pool so no single engine carries the
+   * whole rate limit. The health map is what stops rotation from spreading a
+   * *broken* engine evenly, which would be worse than plain fallback: two
+   * consecutive failures bench an engine for a minute, doubling to ten, and one
+   * success clears the record.
+   */
+  let rotationCursor = 0
+  const engineHealth = new Map<EngineId, { failures: number; until: number }>()
+  const BENCH_AFTER_FAILURES = 2
+  const BENCH_BASE_MS = 60_000
+  const BENCH_MAX_MS = 10 * 60_000
+
+  const isBenched = (engine: EngineId, now: number): boolean => (engineHealth.get(engine)?.until ?? 0) > now
+
+  const noteFailure = (engine: EngineId): void => {
+    const health = engineHealth.get(engine) ?? { failures: 0, until: 0 }
+    health.failures += 1
+    if (health.failures >= BENCH_AFTER_FAILURES) {
+      const ms = Math.min(BENCH_BASE_MS * 2 ** (health.failures - BENCH_AFTER_FAILURES), BENCH_MAX_MS)
+      health.until = Date.now() + ms
+      logger.warn(`free-search: benching ${engine} for ${Math.round(ms / 1000)}s after ${health.failures} consecutive failures`)
+    }
+    engineHealth.set(engine, health)
+  }
+
+  const noteSuccess = (engine: EngineId): void => { engineHealth.delete(engine) }
+
+  /**
+   * Engines this request may use. A key-only engine joins once it has a key in
+   * settings or the environment; one that only the credentials service holds is
+   * still attempted by runEngine, so leaving it in costs at most one turn.
+   */
+  const enginePool = (cfg: PluginConfig, timeRange: TimeRange | undefined): EngineId[] => {
+    const usable = [...PAID_ENGINES, ...SCRAPE_ENGINES].filter(engine => {
+      if (!KEY_ONLY_ENGINES.includes(engine)) return true
+      const entry = ENGINE_KEY_ENV[engine]
+      return entry === undefined || Boolean(cfg[entry[1]] ?? process.env[entry[0]])
+    })
+    return timeRange ? usable.filter(engine => TIME_ENGINES.includes(engine)) : usable
+  }
 
   const provider = {
     id: 'ddg',
@@ -132,22 +188,37 @@ export function apply(ctx: Context, config?: PluginConfig) {
       }
       const cfg = current()
       const query = request.query
-      const preferred: EngineId =
-        typeof request.engine === 'string' && (ALL_ENGINES as readonly string[]).includes(request.engine)
-          ? request.engine as EngineId
-          : (ALL_ENGINES as readonly string[]).includes(cfg.provider ?? '')
-            ? cfg.provider as EngineId
-            : 'bing'
+      const explicitEngine = typeof request.engine === 'string' && (ALL_ENGINES as readonly string[]).includes(request.engine)
+        ? request.engine as EngineId
+        : undefined
+      const preferred: EngineId = explicitEngine
+        ?? ((ALL_ENGINES as readonly string[]).includes(cfg.provider ?? '') ? cfg.provider as EngineId : 'bing')
 
       const timeRange = parseTimeRange(request.timeRange)
       const timeRangeLabel = typeof request.timeRange === 'string'
         ? request.timeRange
         : timeRange ? ('days' in timeRange ? String(timeRange.days) : timeRange.after) : ''
 
+      const rotationOn = (cfg.rotation ?? 'round-robin') !== 'off'
+      const pool = enginePool(cfg, timeRange)
+      // An explicit engine from the caller outranks the rotation.
+      const rotating = rotationOn && explicitEngine === undefined && pool.length > 1
+
+      /** Where this request starts: the rotated pick, or the caller's engine. */
+      let start: EngineId = preferred
+      if (rotating) {
+        start = pool[rotationCursor % pool.length]
+        rotationCursor = (rotationCursor + 1) % 100_000
+      }
+
       const cacheTtlMs = Math.min(Math.max(cfg.cacheTtl ?? 5, 0), 5) * 60 * 1000
       const cacheEnabled = cfg.cache !== false && cacheTtlMs > 0
       const maxResults = Math.max((request.maxResults as number | undefined) ?? 5, 1)
-      const cacheKey = cacheEnabled ? searchCache.buildKey(query, maxResults, timeRangeLabel, preferred) : null
+      // A rotating request must not key the cache on the engine it happened to
+      // draw, or every turn of the cycle would miss.
+      const cacheKey = cacheEnabled
+        ? searchCache.buildKey(query, maxResults, timeRangeLabel, rotating ? 'rotating-pool' : start)
+        : null
 
       if (cacheKey) {
         const hit = searchCache.get(cacheKey)
@@ -157,21 +228,25 @@ export function apply(ctx: Context, config?: PluginConfig) {
         }
       }
 
-      let chain: EngineId[]
-      let preferredSkippedReason: string | null = null
-
-      if (timeRange) {
-        const preferredFirst = TIME_ENGINES.includes(preferred) ? [preferred] : []
-        const otherTime = TIME_ENGINES.filter(e => e !== preferred)
-        const noTime = [...PAID_ENGINES, ...SCRAPE_ENGINES].filter(e => !TIME_ENGINES.includes(e) && e !== preferred)
-        chain = [...preferredFirst, ...otherTime, ...noTime]
-        if (!TIME_ENGINES.includes(preferred)) preferredSkippedReason = 'time-filter'
-      } else {
-        chain = [preferred, ...PAID_ENGINES.filter(e => e !== preferred), ...SCRAPE_ENGINES.filter(e => e !== preferred)]
+      /** Rotate a list so `start` leads; engines ahead of it become fallbacks. */
+      const rotateTo = (list: EngineId[]): EngineId[] => {
+        const index = list.indexOf(start)
+        return index <= 0 ? list : [...list.slice(index), ...list.slice(0, index)]
       }
+      const head = rotateTo(pool)
+      const tail = [...PAID_ENGINES, ...SCRAPE_ENGINES].filter(engine => !head.includes(engine))
+      const now = Date.now()
+      const ordered = [...head, ...tail]
+      // Benched engines keep their place at the very end rather than dropping out:
+      // when everything is benched the search still has to run.
+      const chain: EngineId[] = [
+        ...ordered.filter(engine => !isBenched(engine, now)),
+        ...ordered.filter(engine => isBenched(engine, now)),
+      ]
+      const first = chain[0] ?? preferred
 
       let lastError: Error | null = null
-      let preferredFailure: string | null = null
+      let firstFailure: string | null = null
       const BUDGET_MS = 30_000
       const deadline = Date.now() + BUDGET_MS
       const opts = toSearchOptions(cfg, timeRange)
@@ -188,10 +263,14 @@ export function apply(ctx: Context, config?: PluginConfig) {
             result.sources = result.sources.map(s =>
               s.snippet ? { ...s, snippet: cleanSnippet(s.snippet)! } : s,
             )
-            if (engine !== preferred) {
-              result.content = preferredSkippedReason === 'time-filter'
-                ? `Note: ${preferred} does not support time filtering (timeRange=${timeRangeLabel}), using ${engine}.`
-                : `Note: ${preferred} unavailable or failed${preferredFailure ? ` (${preferredFailure})` : ''}, using ${engine}.`
+            noteSuccess(engine)
+            if (engine !== first) {
+              result.content = `Note: ${first} ${firstFailure ?? 'returned nothing'}, using ${engine}.`
+            } else if (start !== first) {
+              const why = timeRange && !TIME_ENGINES.includes(start)
+                ? `does not support time filtering (timeRange=${timeRangeLabel})`
+                : 'is benched after repeated failures'
+              result.content = `Note: ${start} ${why}, using ${engine}.`
             }
             if (timeRange && !TIME_ENGINES.includes(engine)) {
               const warn = `Warning: ${engine} does not support time filtering — results are unfiltered.`
@@ -199,18 +278,19 @@ export function apply(ctx: Context, config?: PluginConfig) {
             }
             const cached: SearchResult = { ...result, provider: engine }
             if (cacheKey) {
-              const ttl = engine !== preferred ? Math.max(cacheTtlMs / 5, 1000) : cacheTtlMs
+              const ttl = engine !== first ? Math.max(cacheTtlMs / 5, 1000) : cacheTtlMs
               searchCache.set(cacheKey, cached, ttl)
             }
             return { ...cached, _cache: 'miss' }
           }
 
           lastError = new Error(`engine "${engine}" returned 0 results`)
-          if (engine === preferred) preferredFailure = 'returned 0 results'
+          if (engine === first) firstFailure = 'returned 0 results'
           logger.warn(`free-search: ${engine} returned 0 results, trying next engine`)
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          if (engine === preferred) preferredFailure = lastError.message
+          noteFailure(engine)
+          if (engine === first) firstFailure = lastError.message
           logger.warn(`free-search: engine "${engine}" failed (${lastError.message}), trying next engine`)
         }
       }
@@ -398,7 +478,8 @@ export function apply(ctx: Context, config?: PluginConfig) {
           '- perplexity - requires PERPLEXITY_API_KEY',
           '- deepseek-official - requires DEEPSEEK_API_KEY',
           '',
-          'If the configured engine fails, web_search automatically tries others.',
+          'If the engine in use fails, web_search automatically tries the others.',
+          `Rotation: ${current().rotation === 'off' ? 'off (same engine every request)' : 'round-robin across the usable engines'}.`,
           '',
           'Use free_search_test to test engine availability.',
           'Use advanced_search with timeRange for time-filtered results.',

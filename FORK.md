@@ -27,7 +27,7 @@ Upstream 0.1.0 (commit 354b95a, 2026-08-30) is written against dsh-settings 0.1.
 |---|---|
 | `src/bridge/store.ts` | **new** — plugin-owned settings file (`$DSH_HOME/free-search/settings.json`), atomic temp+rename writes, allowlisted fields, secret redaction, revision counter |
 | `src/bridge/routes.ts` | rewritten — same three loopback POST routes (`describe`, `mutate`, `raw-search`) but backed by that file instead of the harness settings service |
-| `src/index.ts` | store created at apply time; `current()` layers the file over the entry config and is read per request; bridge registered on `webServer` |
+| `src/index.ts` | store created at apply time; `current()` layers the file over the entry config and is read per request; bridge registered on `webServer`; round-robin rotation with a per-engine health map (2 consecutive failures bench an engine for 1 min, doubling to 10) |
 | `src/constants.ts` | `FREE_SEARCH_NS` is the plain string `'free-search'` |
 | `src/client/bridge.ts` | **new** — shared `BRIDGE_PREFIX`, `NS`, `ENGINES`, typed fetch helpers |
 | `src/client/SettingsPage.tsx` | **new** — full settings page (engine picker, optional API keys, cache TTL, platform toggles, engine test) |

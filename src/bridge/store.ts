@@ -42,6 +42,7 @@ export const WRITABLE_FIELDS = [
   'cache',
   'cacheTtl',
   'platforms',
+  'rotation',
   ...SECRET_FIELDS,
 ] as const
 
@@ -53,6 +54,7 @@ export interface FreeSearchSettings {
   cache?: boolean
   cacheTtl?: number
   platforms?: string[]
+  rotation?: string
   anysearchApiKey?: string
   exaApiKey?: string
   tavilyApiKey?: string
@@ -132,6 +134,10 @@ export class SettingsFile {
         if (Array.isArray(raw)) next.platforms = raw.filter((p): p is string => typeof p === 'string')
         continue
       }
+      if (field === 'rotation') {
+        if (raw === 'off' || raw === 'round-robin') next.rotation = raw
+        continue
+      }
       if (typeof raw === 'string') (next as Record<string, unknown>)[field] = raw
     }
     return next
@@ -204,6 +210,9 @@ export class SettingsFile {
       } else if (field === 'platforms') {
         if (!Array.isArray(value)) throw new Error('platforms must be an array')
         next.platforms = value.filter((p): p is string => typeof p === 'string')
+      } else if (field === 'rotation') {
+        if (value !== 'off' && value !== 'round-robin') throw new Error('rotation must be "off" or "round-robin"')
+        next.rotation = value
       } else {
         if (typeof value !== 'string') throw new Error(`${field} must be a string`)
         if (value === '') delete next[field as WritableField]

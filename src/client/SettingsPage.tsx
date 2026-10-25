@@ -55,6 +55,7 @@ export function FreeSearchSettingsPage() {
   const [platforms, setPlatforms] = useState<string[]>(['github', 'reddit'])
   const [cacheTtl, setCacheTtl] = useState(5)
   const [cacheOn, setCacheOn] = useState(true)
+  const [rotation, setRotation] = useState<'round-robin' | 'off'>('round-robin')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -74,6 +75,7 @@ export function FreeSearchSettingsPage() {
       setPlatforms(Array.isArray(v.platforms) ? v.platforms as string[] : ['github', 'reddit'])
       setCacheTtl(typeof v.cacheTtl === 'number' ? v.cacheTtl : 5)
       setCacheOn(v.cache !== false)
+      setRotation(v.rotation === 'off' ? 'off' : 'round-robin')
       const flags: Record<string, boolean> = {}
       for (const secret of view.secrets ?? []) {
         const name = secret.path.join('.')
@@ -100,6 +102,7 @@ export function FreeSearchSettingsPage() {
         { op: 'set', path: ['platforms'], value: platforms },
         { op: 'set', path: ['cacheTtl'], value: cacheTtl },
         { op: 'set', path: ['cache'], value: cacheOn },
+        { op: 'set', path: ['rotation'], value: rotation },
       ]
       for (const { field } of KEY_FIELDS) {
         const value = (keys[field] ?? '').trim()
@@ -256,6 +259,21 @@ export function FreeSearchSettingsPage() {
               <span className="dshfs-label">platform_search: {id}</span>
             </label>
           ))}
+        </div>
+        <div className="dshfs-row" style={{ marginTop: 12 }}>
+          <label className="dshfs-row" style={{ gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={rotation === 'round-robin'}
+              onChange={event => { setRotation(event.target.checked ? 'round-robin' : 'off'); setDirty(true) }}
+            />
+            <span className="dshfs-label">Rotasi engine (round-robin)</span>
+          </label>
+          <span className="dshfs-note">
+            {rotation === 'round-robin'
+              ? 'Tiap request mulai dari engine berikutnya; engine yang gagal 2x berturut-turut diistirahatkan sebentar.'
+              : 'Semua request mulai dari engine terpilih; engine lain hanya jadi cadangan.'}
+          </span>
         </div>
       </div>
 

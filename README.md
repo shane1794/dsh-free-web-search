@@ -5,6 +5,7 @@ Free web search plugin for [DeepSeek Harness](https://github.com/deepseek-ai/dee
 ## Features
 
 - **10 search engines** with automatic fallback — if one fails, the next one picks up
+- **Round-robin rotation** across the usable engines (off by default in config, on by default in this fork's settings) — no single engine carries the whole rate limit, and an engine that fails twice in a row is benched for a while
 - **Time-filtered search** via `advanced_search` tool (last day/week/month/year, or custom ranges like `3d`, `2mo`, `2026-07-01`)
 - **Platform search** — GitHub repos and Reddit threads via `platform_search` tool
 - **Engine diagnostics** — `free_search_test` tool to check which engines work
@@ -84,6 +85,7 @@ free-search:
   platforms:
     - github
     - reddit
+  rotation: round-robin      # off | round-robin
   searxngInstances:          # optional, overrides default public instances
     - https://your-instance.example.com
   # Optional API keys
